@@ -1,8 +1,8 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>Mix n Match — Standalone</title>
 
 <style>
@@ -67,7 +67,7 @@ input,select{
 .match{padding:6px 0;font-size:14.5px;}
 .idle{font-size:12.5px;color:var(--muted);margin-top:6px;font-style:italic;}
 
-.score-row{display:flex;align-items:center;gap:8px;margin-top:4px;}
+.score-row{display:flex;gap:8px;margin-top:4px;}
 .score-row input{width:64px;text-align:center;}
 
 table{width:100%;border-collapse:collapse;font-size:13px;}
@@ -120,7 +120,7 @@ td:first-child,th:first-child{text-align:left;}
   <div class="title">Enter Scores</div>
   <div id="scoring"></div>
   <div class="action-row">
-    <button class="btn primary" onclick="summarize()">Generate Summary</button>
+    <button class="btn primary" onclick="generateSummary()">Generate Summary</button>
   </div>
 </div>
 
@@ -136,9 +136,13 @@ td:first-child,th:first-child{text-align:left;}
 </div>
 
 <script>
-const ROUND_LIMIT = 8;
-let players=[], rounds=[], idleCount={}, scores=
-  JSON.parse(localStorage.getItem('scores')||'{}');
+const ROUND_LIMIT=8;
+let players=[], rounds=[], scores={};
+let pairHistory={};
+
+function pairKey(a,b){
+  return [a.id,b.id].sort().join('-');
+}
 
 function startEntry(){
   let html='';
@@ -158,75 +162,72 @@ function startEntry(){
 }
 
 function savePlayers(){
-  players=[]; rounds=[]; idleCount={};
+  players=[]; rounds=[]; pairHistory={}; scores={};
   for(let i=1;i<=+count.value;i++){
     const g=document.getElementById(`g${i}`).value;
     if(!g){alert('All genders required');return;}
-    const p={id:i,name:n(i).value||`Player ${i}`,gender:g};
-    players.push(p);
-    idleCount[p.id]=0;
+    players.push({
+      id:i,
+      name:document.getElementById(`n${i}`).value||`Player ${i}`,
+      gender:g,
+      played:0,
+      idled:0,
+      won:0,
+      R:{}
+    });
   }
   buildRounds();
 }
 
-function n(i){return document.getElementById(`n${i}`);}
-
 function buildRounds(){
   fixtures.innerHTML='';
-  rounds=[];
+  const maxCourts=+courts.value;
 
   for(let r=1;r<=ROUND_LIMIT;r++){
+    const women=players.filter(p=>p.gender==='W')
+      .sort((a,b)=>(a.played-b.played)||(a.idled-b.idled));
+    const men=players.filter(p=>p.gender==='M')
+      .sort((a,b)=>(a.played-b.played)||(a.idled-b.idled));
 
-    const women = players.filter(p=>p.gender==='W')
-      .sort((a,b)=>(idleCount[a.id]-idleCount[b.id])||a.id-b.id);
-    const men = players.filter(p=>p.gender==='M')
-      .sort((a,b)=>(idleCount[a.id]-idleCount[b.id])||a.id-b.id);
-
-    const maxPossibleCourts = Math.floor(
-      Math.min(women.length, men.length) / 2
+    const feasibleCourts=Math.min(
+      maxCourts,
+      Math.floor(Math.min(women.length,men.length)/2)
     );
 
-    const numCourts = Math.min(+courts.value, maxPossibleCourts);
-    const needPerGender = numCourts * 2;
-
-    if(numCourts === 0){
-      players.forEach(p=>idleCount[p.id]++);
-      fixtures.innerHTML+=`
-        <div class="round">
-          <strong>Round ${r}</strong>
-          <div class="idle">Idle: ${players.map(p=>p.name).join(', ')}</div>
-        </div>`;
-      rounds.push({round:r,teams:[],idle:[...players]});
-      continue;
-    }
-
-    const activeWomen = women.slice(0,needPerGender);
-    const activeMen = men.slice(0,needPerGender);
-
-    const idle=[
-      ...women.slice(needPerGender),
-      ...men.slice(needPerGender)
-    ];
-    idle.forEach(p=>idleCount[p.id]++);
+    const activeWomen=women.slice(0,feasibleCourts*2);
+    const activeMen=men.slice(0,feasibleCourts*2);
 
     let teams=[];
-    for(let i=0;i<needPerGender;i++)
-      teams.push([activeWomen[i],activeMen[i]]);
+    while(activeWomen.length && activeMen.length){
+      let w=activeWomen.shift();
+      let bestM=activeMen
+        .map(m=>({m,score:pairHistory[pairKey(w,m)]||0}))
+        .sort((a,b)=>a.score-b.score)[0].m;
+      activeMen.splice(activeMen.indexOf(bestM),1);
+      teams.push([w,bestM]);
+      const k=pairKey(w,bestM);
+      pairHistory[k]=(pairHistory[k]||0)+1;
+    }
+
+    const active=[...teams.flat()];
+    const idle=players.filter(p=>!active.includes(p));
+    active.forEach(p=>p.played++);
+    idle.forEach(p=>p.idled++);
 
     rounds.push({round:r,teams,idle});
 
     let html=`<div class="round"><strong>Round ${r}</strong>`;
     for(let i=0;i+1<teams.length;i+=2){
-      html+=`<div class="match">
-        (${teams[i][0].name}+${teams[i][1].name})
-        vs
-        (${teams[i+1][0].name}+${teams[i+1][1].name})
-      </div>`;
+      html+=`
+        <div class="match">
+          (${teams[i][0].name}+${teams[i][1].name})
+          vs
+          (${teams[i+1][0].name}+${teams[i+1][1].name})
+        </div>`;
     }
     html+=`<div class="idle">Idle: ${idle.map(p=>p.name).join(', ')}</div></div>`;
     fixtures.innerHTML+=html;
   }
-
   fixturesCard.style.display='block';
 }
 
@@ -236,16 +237,15 @@ function showScoring(){
     let html=`<div class="round"><strong>Round ${r.round}</strong>`;
     for(let i=0;i+1<r.teams.length;i+=2){
       const key=`r${r.round}m${i}`;
-      const s=scores[key]||{};
       html+=`
         <div class="match">
           (${r.teams[i][0].name}+${r.teams[i][1].name})
           vs
           (${r.teams[i+1][0].name}+${r.teams[i+1][1].name})
           <div class="score-row">
-            <input type="number" value="${s.a||''}" onchange="saveScore('${key}','a',this.value)">
+            <input type="number" onchange="saveScore('${key}',0,this.value)">
             <span>:</span>
-            <input type="number" value="${s.b||''}" onchange="saveScore('${key}','b',this.value)">
+            <input type="number" onchange="saveScore('${key}',1,this.value)">
           </div>
         </div>`;
     }
@@ -256,34 +256,30 @@ function showScoring(){
 }
 
 function saveScore(k,side,val){
-  scores[k]=scores[k]||{};
+  scores[k]=scores[k]||[null,null];
   scores[k][side]=+val;
-  localStorage.setItem('scores',JSON.stringify(scores));
 }
 
-function summarize(){
-  let stats={};
-  players.forEach(p=>stats[p.id]={p,Played:0,Idled:idleCount[p.id],Won:0,R:{}});
-
+function generateSummary(){
   rounds.forEach(r=>{
     r.teams.forEach((t,i)=>{
       if(i%2) return;
-      const k=`r${r.round}m${i}`, s=scores[k];
-      if(!s||s.a==null||s.b==null) return;
-      const A=t, B=r.teams[i+1];
-      const win=s.a>s.b?A:B, lose=s.a>s.b?B:A;
-      win.forEach(p=>{stats[p.id].Won++;stats[p.id].Played++;stats[p.id].R[r.round]='W';});
-      lose.forEach(p=>{stats[p.id].Played++;stats[p.id].R[r.round]='L';});
+      const s=scores[`r${r.round}m${i}`];
+      if(!s||s[0]==null||s[1]==null) return;
+      const win=s[0]>s[1]?t:r.teams[i+1];
+      const lose=s[0]>s[1]?r.teams[i+1]:t;
+      win.forEach(p=>{p.won++;p.R[r.round]='W';});
+      lose.forEach(p=>{p.R[r.round]='L';});
     });
   });
 
   players.forEach(p=>{
     for(let r=1;r<=ROUND_LIMIT;r++)
-      if(!stats[p.id].R[r]) stats[p.id].R[r]='–';
+      if(!p.R[r]) p.R[r]='–';
   });
 
   const ordered=[...players].sort((a,b)=>
-    a.gender===b.gender ? a.name.localeCompare(b.name) : a.gender==='W'?-1:1
+    a.gender===b.gender?a.name.localeCompare(b.name):a.gender==='W'?-1:1
   );
 
   let html='<table><tr><th>Player</th><th>Played</th><th>Idled</th><th>Won</th>';
@@ -291,9 +287,8 @@ function summarize(){
   html+='</tr>';
 
   ordered.forEach(p=>{
-    const s=stats[p.id];
-    html+=`<tr><td>${p.name}</td><td>${s.Played}</td><td>${s.Idled}</td><td>${s.Won}</td>`;
-    for(let r=1;r<=ROUND_LIMIT;r++) html+=`<td>${s.R[r]}</td>`;
+    html+=`<tr><td>${p.name}</td><td>${p.played}</td><td>${p.idled}</td><td>${p.won}</td>`;
+    for(let r=1;r<=ROUND_LIMIT;r++) html+=`<td>${p.R[r]}</td>`;
     html+='</tr>';
   });
 

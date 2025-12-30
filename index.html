@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Mix n Match — Standalone</title>
+
+<style>
+:root{
+  --page-bg:#f5f6f7;
+  --card-bg:#0f2435;
+  --card-text:#e7f3ff;
+  --muted:#9aa6b4;
+  --accent:#d4af37;
+  --radius:10px;
+  --input-height:44px;
+}
+*{box-sizing:border-box;}
+body{
+  margin:0;
+  font-family:Inter,system-ui,Arial,sans-serif;
+  background:var(--page-bg);
+}
+.banner{
+  position:fixed;top:0;left:0;right:0;height:46px;
+  display:flex;align-items:center;justify-content:center;
+  background:var(--card-bg);color:var(--card-text);
+  font-weight:700;font-size:13px;
+}
+body{padding-top:46px;}
+.wrap{max-width:1100px;margin:0 auto;padding:12px 16px;}
+
+.card{
+  background:var(--card-bg);
+  color:var(--card-text);
+  border-radius:var(--radius);
+  padding:16px;
+  margin-bottom:12px;
+}
+.title{font-weight:700;margin-bottom:12px;}
+label{font-size:12.5px;color:var(--muted);display:block;margin-bottom:6px;}
+
+input,select{
+  width:100%;
+  height:var(--input-height);
+  padding:0 10px;
+  border-radius:8px;
+  border:1px solid rgba(255,255,255,0.12);
+  background:rgba(255,255,255,0.05);
+  color:var(--card-text);
+}
+
+.btn{
+  height:var(--input-height);
+  padding:0 16px;
+  border-radius:8px;
+  font-weight:700;
+  border:none;
+  cursor:pointer;
+}
+.btn.primary{background:var(--accent);color:#102238;}
+.btn.ghost{background:transparent;color:var(--card-text);border:1px solid rgba(255,255,255,0.12);}
+
+.action-row{display:flex;gap:10px;justify-content:flex-end;margin-top:12px;}
+
+.round{background:rgba(255,255,255,0.03);padding:12px;border-radius:8px;margin-top:12px;}
+.match{padding:6px 0;font-size:14.5px;}
+.idle{font-size:12.5px;color:var(--muted);margin-top:6px;font-style:italic;}
+
+.score-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-top:4px;
+}
+.score-row input{
+  width:64px;
+  text-align:center;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+}
+th,td{
+  border-bottom:1px solid rgba(255,255,255,0.08);
+  padding:6px;
+  text-align:center;
+}
+th{color:var(--muted);font-weight:600;}
+td:first-child,th:first-child{text-align:left;}
+
+.privacy-note{
+  margin:6px 0 2px;
+  font-size:12px;
+  color:var(--muted);
+  text-align:center;
+}
+</style>
+</head>
+
+<body>
+<div class="banner">Mix n Match — Standalone</div>
+<div class="wrap">
+
+<!-- Setup -->
+<div class="card">
+  <div class="title">Setup</div>
+  <label>Courts</label>
+  <input id="courts" type="number" min="1" value="2">
+  <label style="margin-top:8px;">Total Players</label>
+  <input id="count" type="number" min="4" value="12">
+  <div class="action-row">
+    <button class="btn primary" onclick="startEntry()">Next</button>
+    <button class="btn ghost" onclick="location.reload()">Reset</button>
+  </div>
+</div>
+
+<!-- Entry -->
+<div class="card" id="entryCard" style="display:none;">
+  <div class="title">Enter Players</div>
+  <div id="entry"></div>
+  <div class="action-row">
+    <button class="btn primary" onclick="savePlayers()">Generate Fixtures</button>
+  </div>
+</div>
+
+<!-- Fixtures summary -->
+<div class="card" id="fixturesCard" style="display:none;">
+  <div class="title">Fixtures</div>
+  <div id="fixtures"></div>
+  <div class="action-row">
+    <!-- CHANGED: ghost → primary -->
+    <button class="btn primary" onclick="showScoring()">Enter Scores</button>
+  </div>
+</div>
+
+<!-- Scoring -->
+<div class="card" id="scoringCard" style="display:none;">
+  <div class="title">Enter Scores</div>
+  <div id="scoring"></div>
+  <div class="action-row">
+    <button class="btn primary" onclick="summarize()">Generate Summary</button>
+  </div>
+</div>
+
+<!-- Summary -->
+<div class="card" id="summaryCard" style="display:none;">
+  <div class="title">Summary</div>
+  <div id="summary"></div>
+</div>
+
+<div class="privacy-note">
+  <strong>Privacy:</strong> All data is stored locally in your browser only.
+</div>
+
+</div>
+
+<script>
+const ROUND_LIMIT=8;
+let players=[], idleCount={}, rounds=[], scores=
+  JSON.parse(localStorage.getItem('scores')||'{}');
+
+function startEntry(){
+  let html='';
+  for(let i=1;i<=+count.value;i++){
+    html+=`
+      <div style="margin-bottom:10px;">
+        <input id="n${i}" placeholder="Player ${i}">
+        <select id="g${i}" style="margin-top:4px;">
+          <option value="">Gender</option>
+          <option value="W">Woman</option>
+          <option value="M">Man</option>
+        </select>
+      </div>`;
+  }
+  entry.innerHTML=html;
+  entryCard.style.display='block';
+}
+
+function savePlayers(){
+  players=[]; idleCount={}; rounds=[];
+  for(let i=1;i<=+count.value;i++){
+    const g=document.getElementById(`g${i}`).value;
+    if(!g){alert('All genders required');return;}
+    const p={id:i,name:n(i).value||`Player ${i}`,gender:g};
+    players.push(p); idleCount[i]=0;
+    localStorage.setItem('p'+i,JSON.stringify(p));
+  }
+  buildRounds();
+}
+
+function n(i){return document.getElementById(`n${i}`);}
+
+function buildRounds(){
+  fixtures.innerHTML='';
+  const numCourts=+courts.value, activeCount=numCourts*4;
+
+  for(let r=1;r<=ROUND_LIMIT;r++){
+    const sorted=[...players].sort((a,b)=>(idleCount[a.id]-idleCount[b.id])||a.id-b.id);
+    const idle=sorted.slice(0,players.length-activeCount);
+    idle.forEach(p=>idleCount[p.id]++);
+    const active=sorted.slice(players.length-activeCount);
+
+    const men=active.filter(p=>p.gender==='M');
+    const women=active.filter(p=>p.gender==='W');
+    let teams=[];
+
+    for(let i=0;i<Math.min(men.length,women.length)&&teams.length<numCourts*2;i++)
+      teams.push([women[i],men[i]]);
+
+    rounds.push({round:r,teams,idle});
+
+    let html=`<div class="round"><strong>Round ${r}</strong>`;
+    for(let i=0;i+1<teams.length;i+=2){
+      html+=`<div class="match">
+        (${teams[i][0].name}+${teams[i][1].name})
+        vs
+        (${teams[i+1][0].name}+${teams[i+1][1].name})
+      </div>`;
+    }
+    html+=`<div class="idle">Idle: ${idle.map(p=>p.name).join(', ')}</div></div>`;
+    fixtures.innerHTML+=html;
+  }
+  fixturesCard.style.display='block';
+}
+
+function showScoring(){
+  scoring.innerHTML='';
+  rounds.forEach(r=>{
+    let html=`<div class="round"><strong>Round ${r.round}</strong>`;
+    for(let i=0;i+1<r.teams.length;i+=2){
+      const key=`r${r.round}m${i}`;
+      const s=scores[key]||{};
+      html+=`
+        <div class="match">
+          (${r.teams[i][0].name}+${r.teams[i][1].name})
+          vs
+          (${r.teams[i+1][0].name}+${r.teams[i+1][1].name})
+          <div class="score-row">
+            <input type="number" value="${s.a||''}" onchange="saveScore('${key}','a',this.value)">
+            <span>:</span>
+            <input type="number" value="${s.b||''}" onchange="saveScore('${key}','b',this.value)">
+          </div>
+        </div>`;
+    }
+    html+='</div>';
+    scoring.innerHTML+=html;
+  });
+  scoringCard.style.display='block';
+}
+
+function saveScore(k,side,val){
+  scores[k]=scores[k]||{};
+  scores[k][side]=+val;
+  localStorage.setItem('scores',JSON.stringify(scores));
+}
+
+function summarize(){
+  let stats={};
+  players.forEach(p=>stats[p.id]={p,Played:0,Idled:idleCount[p.id],Won:0,R:{}});
+
+  rounds.forEach(r=>{
+    r.teams.forEach((t,i)=>{
+      if(i%2) return;
+      const k=`r${r.round}m${i}`, s=scores[k];
+      if(!s||s.a==null||s.b==null) return;
+      const A=t, B=r.teams[i+1];
+      const win=s.a>s.b?A:B, lose=s.a>s.b?B:A;
+      win.forEach(p=>{stats[p.id].Won++;stats[p.id].Played++;stats[p.id].R[r.round]='W';});
+      lose.forEach(p=>{stats[p.id].Played++;stats[p.id].R[r.round]='L';});
+    });
+  });
+
+  players.forEach(p=>{
+    for(let r=1;r<=ROUND_LIMIT;r++)
+      if(!stats[p.id].R[r]) stats[p.id].R[r]='–';
+  });
+
+  const ordered=[...players].sort((a,b)=>
+    a.gender===b.gender ? a.name.localeCompare(b.name) : a.gender==='W'?-1:1
+  );
+
+  let html='<table><tr><th>Player</th><th>Played</th><th>Idled</th><th>Won</th>';
+  for(let r=1;r<=ROUND_LIMIT;r++) html+=`<th>R${r}</th>`;
+  html+='</tr>';
+
+  ordered.forEach(p=>{
+    const s=stats[p.id];
+    html+=`<tr><td>${p.name}</td><td>${s.Played}</td><td>${s.Idled}</td><td>${s.Won}</td>`;
+    for(let r=1;r<=ROUND_LIMIT;r++) html+=`<td>${s.R[r]}</td>`;
+    html+='</tr>';
+  });
+
+  summary.innerHTML=html;
+  summaryCard.style.display='block';
+}
+</script>
+</body>
+</html>

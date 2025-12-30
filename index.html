@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Mix n Match — v7.2 (Scores + Summary)</title>
+<title>Mix n Match — v7.3 (Stable)</title>
 
 <style>
 :root{
@@ -67,35 +67,17 @@ select option{background:#fff;color:#102238;}
 }
 .match{padding:6px 0;}
 .idle{font-size:12.5px;color:var(--muted);margin-top:6px;}
-
-.score-row{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  margin-top:4px;
-}
-.score-row input{
-  width:64px;
-  text-align:center;
-}
-
-table{
-  width:100%;
-  border-collapse:collapse;
-  font-size:13px;
-}
-th,td{
-  border-bottom:1px solid rgba(255,255,255,0.1);
-  padding:6px;
-  text-align:center;
-}
+.score-row{display:flex;align-items:center;gap:8px;margin-top:4px;}
+.score-row input{width:64px;text-align:center;}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th,td{border-bottom:1px solid rgba(255,255,255,0.1);padding:6px;text-align:center;}
 th{color:var(--muted);}
 td:first-child,th:first-child{text-align:left;}
 </style>
 </head>
 
 <body>
-<div class="banner">Mix n Match — v7.2</div>
+<div class="banner">Mix n Match — v7.3</div>
 <div class="wrap">
 
 <!-- Setup -->
@@ -151,7 +133,7 @@ let players=[], rounds=[], pairHistory={}, idleCount={};
 let scores = JSON.parse(localStorage.getItem('scores')||'{}');
 const ROUND_LIMIT = 8;
 
-/* ---------- EXISTING v7.1 LOGIC (UNCHANGED) ---------- */
+/* ---------- ENTRY ---------- */
 
 function startEntry(){
   let html='';
@@ -188,6 +170,19 @@ function savePlayers(){
 
 function pairKey(a,b){ return [a.id,b.id].sort().join('-'); }
 
+/* ---------- CORE SCHEDULER (v7.1 + GUARD) ---------- */
+
+function canFormTwoTeams(active){
+  const men = active.filter(p=>p.gender==='M').length;
+  const women = active.filter(p=>p.gender==='W').length;
+  let teams = 0;
+  const mw = Math.min(men, women);
+  teams += mw;
+  teams += Math.floor((men - mw)/2);
+  teams += Math.floor((women - mw)/2);
+  return teams >= 2;
+}
+
 function generateRounds(){
   fixtures.innerHTML='';
   rounds=[];
@@ -199,7 +194,7 @@ function generateRounds(){
     let used=new Set(), teams=[];
     let html=`<div class="round"><strong>Round ${round}</strong>`;
 
-    const sorted=[...players].sort((a,b)=>{
+    let sorted=[...players].sort((a,b)=>{
       const restBias =
         (a.gender==='W' && a.playedLastRound ? -1 : 0) -
         (b.gender==='W' && b.playedLastRound ? -1 : 0);
@@ -207,9 +202,17 @@ function generateRounds(){
       return (idleCount[a.id]-idleCount[b.id]) || (a.id-b.id);
     });
 
-    const idle=sorted.slice(0, players.length-activeCount);
-    idle.forEach(p=>idleCount[p.id]++);
-    const active=sorted.slice(players.length-activeCount);
+    let idle=sorted.slice(0, players.length-activeCount);
+    let active=sorted.slice(players.length-activeCount);
+
+    // FEASIBILITY GUARD
+    if(!canFormTwoTeams(active)){
+      idle.forEach(p=>idleCount[p.id]--);
+      idle=[];
+      active=[...players];
+    } else {
+      idle.forEach(p=>idleCount[p.id]++);
+    }
 
     const men=active.filter(p=>p.gender==='M');
     const women=active.filter(p=>p.gender==='W');
@@ -295,7 +298,8 @@ function generateSummary(){
       stats[t.a.id].R[r.round]='P';
       stats[t.b.id].R[r.round]='P';
       if(+s[0]>+s[1]){
-        stats[t.a.id].Won++; stats[t.b.id].Won++;
+        stats[t.a.id].Won++;
+        stats[t.b.id].Won++;
       }
     });
     r.idle.forEach(p=>{

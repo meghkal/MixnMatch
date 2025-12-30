@@ -137,8 +137,8 @@ td:first-child,th:first-child{text-align:left;}
 
 <script>
 const ROUND_LIMIT = 8;
-let players=[], rounds=[], scores=JSON.parse(localStorage.getItem('scores')||'{}');
-let idleCount={};
+let players=[], rounds=[], idleCount={}, scores=
+  JSON.parse(localStorage.getItem('scores')||'{}');
 
 function startEntry(){
   let html='';
@@ -173,17 +173,35 @@ function n(i){return document.getElementById(`n${i}`);}
 
 function buildRounds(){
   fixtures.innerHTML='';
-  const numCourts=+courts.value;
-  const needPerGender=numCourts*2;
+  rounds=[];
 
   for(let r=1;r<=ROUND_LIMIT;r++){
-    const women=players.filter(p=>p.gender==='W')
+
+    const women = players.filter(p=>p.gender==='W')
       .sort((a,b)=>(idleCount[a.id]-idleCount[b.id])||a.id-b.id);
-    const men=players.filter(p=>p.gender==='M')
+    const men = players.filter(p=>p.gender==='M')
       .sort((a,b)=>(idleCount[a.id]-idleCount[b.id])||a.id-b.id);
 
-    const activeWomen=women.slice(0,needPerGender);
-    const activeMen=men.slice(0,needPerGender);
+    const maxPossibleCourts = Math.floor(
+      Math.min(women.length, men.length) / 2
+    );
+
+    const numCourts = Math.min(+courts.value, maxPossibleCourts);
+    const needPerGender = numCourts * 2;
+
+    if(numCourts === 0){
+      players.forEach(p=>idleCount[p.id]++);
+      fixtures.innerHTML+=`
+        <div class="round">
+          <strong>Round ${r}</strong>
+          <div class="idle">Idle: ${players.map(p=>p.name).join(', ')}</div>
+        </div>`;
+      rounds.push({round:r,teams:[],idle:[...players]});
+      continue;
+    }
+
+    const activeWomen = women.slice(0,needPerGender);
+    const activeMen = men.slice(0,needPerGender);
 
     const idle=[
       ...women.slice(needPerGender),
@@ -200,14 +218,15 @@ function buildRounds(){
     let html=`<div class="round"><strong>Round ${r}</strong>`;
     for(let i=0;i+1<teams.length;i+=2){
       html+=`<div class="match">
-        (${teams[i][0].name} + ${teams[i][1].name})
+        (${teams[i][0].name}+${teams[i][1].name})
         vs
-        (${teams[i+1][0].name} + ${teams[i+1][1].name})
+        (${teams[i+1][0].name}+${teams[i+1][1].name})
       </div>`;
     }
     html+=`<div class="idle">Idle: ${idle.map(p=>p.name).join(', ')}</div></div>`;
     fixtures.innerHTML+=html;
   }
+
   fixturesCard.style.display='block';
 }
 

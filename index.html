@@ -84,13 +84,10 @@ textarea{min-height:120px;resize:vertical;}
 
 <div class="card" id="entryCard" style="display:none;">
   <div class="title">Enter Players</div>
-
   <label>Women (one per line)</label>
   <textarea id="women"></textarea>
-
   <label style="margin-top:8px;">Men (one per line)</label>
   <textarea id="men"></textarea>
-
   <div class="action-row">
     <button class="btn primary" onclick="savePlayers()">Generate Fixtures</button>
   </div>
@@ -113,9 +110,9 @@ function savePlayers(){
   players=[]; pairHistory={}; idleCount={}
   let id=1
   women.value.split('\n').map(s=>s.trim()).filter(Boolean)
-    .forEach(n=>{ players.push({id,name:n,gender:'W',playedLastRound:false}); idleCount[id++]=0 })
+    .forEach(n=>{ players.push({id,name:n,gender:'W'}); idleCount[id++]=0 })
   men.value.split('\n').map(s=>s.trim()).filter(Boolean)
-    .forEach(n=>{ players.push({id,name:n,gender:'M',playedLastRound:false}); idleCount[id++]=0 })
+    .forEach(n=>{ players.push({id,name:n,gender:'M'}); idleCount[id++]=0 })
   generateRounds()
 }
 
@@ -126,58 +123,76 @@ function generateRounds(){
   const numCourts=+courts.value
   const activeCount=numCourts*4
 
-  for(let round=1;round<=ROUND_LIMIT;round++){
-    players.forEach(p=>p.playedLastRound=false)
-    let used=new Set(), teams=[]
+  for(let round=1; round<=ROUND_LIMIT; round++){
     let html=`<div class="round"><strong>Round ${round}</strong>`
 
+    // ---- Idle selection (least-idled first)
     const sorted=[...players].sort((a,b)=>
       (idleCount[a.id]-idleCount[b.id])||(a.id-b.id)
     )
-
-    const idle=sorted.slice(0,players.length-activeCount)
+    const idle=sorted.slice(0, players.length-activeCount)
     idle.forEach(p=>idleCount[p.id]++)
     const active=sorted.slice(players.length-activeCount)
 
-    const menA=active.filter(p=>p.gender==='M')
-    const womenA=active.filter(p=>p.gender==='W')
+    // ---- Build teams until courts are full
+    const teams=[]
+    const used=new Set()
 
-    const balanced = Math.abs(menA.length-womenA.length)<=1
-    const maxMW = balanced ? (numCourts-1) : numCourts
+    const menA=()=>active.filter(p=>p.gender==='M' && !used.has(p.id))
+    const womenA=()=>active.filter(p=>p.gender==='W' && !used.has(p.id))
 
-    let mwPairs=[]
-    menA.forEach(m=>womenA.forEach(w=>{
-      mwPairs.push({m,w,used:pairHistory[pairKey(m,w)]||0})
-    }))
-    mwPairs.sort((a,b)=>a.used-b.used)
+    while(teams.length < numCourts*2){
+      // 1. Prefer MW with least-used history
+      let bestMW=null
+      menA().forEach(m=>{
+        womenA().forEach(w=>{
+          const k=pairKey(m,w)
+          const usedCt=pairHistory[k]||0
+          if(!bestMW || usedCt < bestMW.used){
+            bestMW={m,w,used:usedCt}
+          }
+        })
+      })
+      if(bestMW){
+        teams.push({a:bestMW.m,b:bestMW.w})
+        used.add(bestMW.m.id); used.add(bestMW.w.id)
+        pairHistory[pairKey(bestMW.m,bestMW.w)]=(bestMW.used||0)+1
+        continue
+      }
 
-    for(const p of mwPairs){
-      if(teams.length>=maxMW*2) break
-      if(used.has(p.m.id)||used.has(p.w.id)) continue
-      teams.push({type:'MW',a:p.m,b:p.w})
-      used.add(p.m.id); used.add(p.w.id)
-      pairHistory[pairKey(p.m,p.w)]=(pairHistory[pairKey(p.m,p.w)]||0)+1
+      // 2. Fallback WW
+      const w=womenA()
+      if(w.length>=2){
+        teams.push({a:w[0],b:w[1]})
+        used.add(w[0].id); used.add(w[1].id)
+        continue
+      }
+
+      // 3. Fallback MM
+      const m=menA()
+      if(m.length>=2){
+        teams.push({a:m[0],b:m[1]})
+        used.add(m[0].id); used.add(m[1].id)
+        continue
+      }
+
+      // Should never reach here
+      break
     }
 
-    const freeW=womenA.filter(w=>!used.has(w.id))
-    const freeM=menA.filter(m=>!used.has(m.id))
-
-    if(freeW.length>=2){
-      teams.push({type:'WW',a:freeW[0],b:freeW[1]})
-      used.add(freeW[0].id); used.add(freeW[1].id)
-    } else if(freeM.length>=2){
-      teams.push({type:'MM',a:freeM[0],b:freeM[1]})
-      used.add(freeM[0].id); used.add(freeM[1].id)
-    }
-
+    // ---- Render matches
     for(let i=0;i+1<teams.length;i+=2){
-      html+=`<div class="match">(${teams[i].a.name} + ${teams[i].b.name})
-      vs (${teams[i+1].a.name} + ${teams[i+1].b.name})</div>`
+      html+=`<div class="match">
+        (${teams[i].a.name} + ${teams[i].b.name})
+        vs
+        (${teams[i+1].a.name} + ${teams[i+1].b.name})
+      </div>`
     }
 
     html+=`<div class="idle">Idle: ${idle.map(p=>p.name).join(', ')}</div></div>`
     fixtures.innerHTML+=html
   }
+
   fixturesCard.style.display='block'
 }
 </script>

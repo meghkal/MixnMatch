@@ -38,16 +38,15 @@ body{padding-top:46px;}
 }
 .title{font-weight:700;margin-bottom:12px;}
 label{font-size:12.5px;color:var(--muted);display:block;margin-bottom:6px;}
-input,select{
+input,textarea{
   width:100%;
-  height:var(--input-height);
-  padding:0 12px;
+  padding:10px 12px;
   border-radius:8px;
   border:1px solid rgba(255,255,255,0.12);
   background:rgba(255,255,255,0.05);
   color:var(--card-text);
 }
-select option{background:#fff;color:#102238;}
+textarea{min-height:120px;resize:vertical;}
 .btn{
   height:var(--input-height);
   padding:0 16px;
@@ -67,6 +66,7 @@ select option{background:#fff;color:#102238;}
 }
 .match{padding:6px 0;}
 .idle{font-size:12.5px;color:var(--muted);margin-top:6px;}
+.serial-list{font-size:13px;line-height:1.6;margin-top:6px;color:#cfe3ff;}
 </style>
 </head>
 
@@ -79,17 +79,33 @@ select option{background:#fff;color:#102238;}
   <div class="title">Setup</div>
   <label>Number of Courts</label>
   <input id="courts" type="number" min="1" value="2">
-  <label style="margin-top:8px;">Total No. of Players</label>
-  <input id="count" type="number" min="4" value="12">
   <div class="action-row">
-    <button class="btn primary" onclick="startEntry()">Next: Enter Players</button>
+    <button class="btn primary" onclick="showEntry()">Next: Enter Players</button>
     <button class="btn ghost" onclick="location.reload()">Reset</button>
   </div>
 </div>
 
 <div class="card" id="entryCard" style="display:none;">
   <div class="title">Enter Players</div>
-  <div id="entry"></div>
+
+  <label>
+    <input type="checkbox" id="womenChk" onchange="toggleGender('W')">
+    Women
+  </label>
+  <div id="womenBox" style="display:none;">
+    <textarea id="womenNames" placeholder="Enter one name per line"></textarea>
+    <div id="womenList" class="serial-list"></div>
+  </div>
+
+  <label style="margin-top:10px;">
+    <input type="checkbox" id="menChk" onchange="toggleGender('M')">
+    Men
+  </label>
+  <div id="menBox" style="display:none;">
+    <textarea id="menNames" placeholder="Enter one name per line"></textarea>
+    <div id="menList" class="serial-list"></div>
+  </div>
+
   <div class="action-row">
     <button class="btn primary" onclick="savePlayers()">Generate Fixtures</button>
   </div>
@@ -106,37 +122,54 @@ select option{background:#fff;color:#102238;}
 let players=[], pairHistory={}, idleCount={};
 const ROUND_LIMIT = 8;
 
-function startEntry(){
-  const n=+count.value;
-  let html='';
-  for(let i=1;i<=n;i++){
-    html+=`
-      <div style="margin-bottom:8px;">
-        <input id="n${i}" placeholder="Player ${i}">
-        <select id="g${i}" style="margin-top:4px;">
-          <option value="" selected>Gender</option>
-          <option value="W">Woman</option>
-          <option value="M">Man</option>
-        </select>
-      </div>`;
-  }
-  entry.innerHTML=html;
+function showEntry(){
   entryCard.style.display='block';
+}
+
+function toggleGender(g){
+  if(g==='W'){
+    womenBox.style.display = womenChk.checked ? 'block' : 'none';
+  }
+  if(g==='M'){
+    menBox.style.display = menChk.checked ? 'block' : 'none';
+  }
+}
+
+womenNames?.addEventListener('input', ()=>renderList('W'));
+menNames?.addEventListener('input', ()=>renderList('M'));
+
+function renderList(g){
+  const src = g==='W' ? womenNames.value : menNames.value;
+  const out = g==='W' ? womenList : menList;
+  const names = src.split('\n').map(s=>s.trim()).filter(Boolean);
+  out.innerHTML = names.map((n,i)=>`${i+1}. ${n}`).join('<br>');
 }
 
 function savePlayers(){
   players=[]; pairHistory={}; idleCount={};
-  for(let i=1;i<=+count.value;i++){
-    const g=document.getElementById(`g${i}`).value;
-    if(!g){alert('All genders required');return;}
-    players.push({
-      id:i,
-      name:document.getElementById(`n${i}`).value||`Player ${i}`,
-      gender:g,
-      playedLastRound:false
-    });
-    idleCount[i]=0;
+
+  let id=1;
+  const women = womenChk.checked
+    ? womenNames.value.split('\n').map(s=>s.trim()).filter(Boolean)
+    : [];
+  const men = menChk.checked
+    ? menNames.value.split('\n').map(s=>s.trim()).filter(Boolean)
+    : [];
+
+  if(!women.length && !men.length){
+    alert('Enter at least one player');
+    return;
   }
+
+  women.forEach(n=>{
+    players.push({id, name:n, gender:'W', playedLastRound:false});
+    idleCount[id++]=0;
+  });
+  men.forEach(n=>{
+    players.push({id, name:n, gender:'M', playedLastRound:false});
+    idleCount[id++]=0;
+  });
+
   generateRounds();
 }
 
@@ -155,7 +188,6 @@ function generateRounds(){
     let used=new Set(), teams=[];
     let html=`<div class="round"><strong>Round ${round}</strong>`;
 
-    /* Phase A: Idle Selection with Women Rest Bias */
     const sorted=[...players].sort((a,b)=>{
       const restBias =
         (a.gender==='W' && a.playedLastRound ? -1 : 0) -
@@ -168,7 +200,6 @@ function generateRounds(){
     idle.forEach(p=>idleCount[p.id]++);
     const active=sorted.slice(players.length-activeCount);
 
-    /* Phase B: Team Building (unchanged from v7) */
     const men=active.filter(p=>p.gender==='M');
     const women=active.filter(p=>p.gender==='W');
 
@@ -212,7 +243,6 @@ function generateRounds(){
     }
 
     active.forEach(p=>p.playedLastRound=true);
-
     html+=`<div class="idle">Idle: ${idle.map(p=>p.name).join(', ')}</div>`;
     html+='</div>';
     fixtures.innerHTML+=html;

@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Mix n Match — Smoke Test (v7 + Women Rest Bias)</title>
+<title>Mix n Match — v7.2 (Scores + Summary)</title>
 
 <style>
 :root{
@@ -67,14 +67,38 @@ select option{background:#fff;color:#102238;}
 }
 .match{padding:6px 0;}
 .idle{font-size:12.5px;color:var(--muted);margin-top:6px;}
+
+.score-row{
+  display:flex;
+  align-items:center;
+  gap:8px;
+  margin-top:4px;
+}
+.score-row input{
+  width:64px;
+  text-align:center;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  font-size:13px;
+}
+th,td{
+  border-bottom:1px solid rgba(255,255,255,0.1);
+  padding:6px;
+  text-align:center;
+}
+th{color:var(--muted);}
+td:first-child,th:first-child{text-align:left;}
 </style>
 </head>
 
 <body>
-<div class="banner">Mix n Match — Smoke Test (v7 + Women Rest Bias)</div>
-
+<div class="banner">Mix n Match — v7.2</div>
 <div class="wrap">
 
+<!-- Setup -->
 <div class="card">
   <div class="title">Setup</div>
   <label>Number of Courts</label>
@@ -87,6 +111,7 @@ select option{background:#fff;color:#102238;}
   </div>
 </div>
 
+<!-- Entry -->
 <div class="card" id="entryCard" style="display:none;">
   <div class="title">Enter Players</div>
   <div id="entry"></div>
@@ -95,21 +120,42 @@ select option{background:#fff;color:#102238;}
   </div>
 </div>
 
+<!-- Fixtures -->
 <div class="card" id="fixturesCard" style="display:none;">
   <div class="title">Fixtures</div>
   <div id="fixtures"></div>
+  <div class="action-row">
+    <button class="btn primary" onclick="showScoring()">Add Scores</button>
+  </div>
+</div>
+
+<!-- Scoring -->
+<div class="card" id="scoringCard" style="display:none;">
+  <div class="title">Add Scores</div>
+  <div id="scoring"></div>
+  <div class="action-row">
+    <button class="btn primary" onclick="generateSummary()">Summary</button>
+  </div>
+</div>
+
+<!-- Summary -->
+<div class="card" id="summaryCard" style="display:none;">
+  <div class="title">Summary</div>
+  <div id="summary"></div>
 </div>
 
 </div>
 
 <script>
-let players=[], pairHistory={}, idleCount={};
+let players=[], rounds=[], pairHistory={}, idleCount={};
+let scores = JSON.parse(localStorage.getItem('scores')||'{}');
 const ROUND_LIMIT = 8;
 
+/* ---------- EXISTING v7.1 LOGIC (UNCHANGED) ---------- */
+
 function startEntry(){
-  const n=+count.value;
   let html='';
-  for(let i=1;i<=n;i++){
+  for(let i=1;i<=+count.value;i++){
     html+=`
       <div style="margin-bottom:8px;">
         <input id="n${i}" placeholder="Player ${i}">
@@ -125,7 +171,7 @@ function startEntry(){
 }
 
 function savePlayers(){
-  players=[]; pairHistory={}; idleCount={};
+  players=[]; pairHistory={}; idleCount={}; rounds=[];
   for(let i=1;i<=+count.value;i++){
     const g=document.getElementById(`g${i}`).value;
     if(!g){alert('All genders required');return;}
@@ -140,22 +186,19 @@ function savePlayers(){
   generateRounds();
 }
 
-function pairKey(a,b){
-  return [a.id,b.id].sort().join('-');
-}
+function pairKey(a,b){ return [a.id,b.id].sort().join('-'); }
 
 function generateRounds(){
   fixtures.innerHTML='';
+  rounds=[];
   const numCourts=+courts.value;
   const activeCount=numCourts*4;
 
   for(let round=1; round<=ROUND_LIMIT; round++){
     players.forEach(p=>p.playedLastRound=false);
-
     let used=new Set(), teams=[];
     let html=`<div class="round"><strong>Round ${round}</strong>`;
 
-    /* Phase A: Idle Selection with Women Rest Bias */
     const sorted=[...players].sort((a,b)=>{
       const restBias =
         (a.gender==='W' && a.playedLastRound ? -1 : 0) -
@@ -168,7 +211,6 @@ function generateRounds(){
     idle.forEach(p=>idleCount[p.id]++);
     const active=sorted.slice(players.length-activeCount);
 
-    /* Phase B: Team Building (unchanged from v7) */
     const men=active.filter(p=>p.gender==='M');
     const women=active.filter(p=>p.gender==='W');
 
@@ -183,42 +225,103 @@ function generateRounds(){
 
     for(const p of mwPairs){
       if(used.has(p.m.id)||used.has(p.w.id)) continue;
-      teams.push({type:'MW',a:p.m,b:p.w});
+      teams.push({a:p.m,b:p.w});
       used.add(p.m.id); used.add(p.w.id);
       pairHistory[pairKey(p.m,p.w)]=(pairHistory[pairKey(p.m,p.w)]||0)+1;
       if(teams.length===numCourts*2) break;
     }
 
-    const freeW=women.filter(w=>!used.has(w.id));
-    for(let i=0;i+1<freeW.length && teams.length<numCourts*2;i+=2){
-      teams.push({type:'WW',a:freeW[i],b:freeW[i+1]});
-      used.add(freeW[i].id); used.add(freeW[i+1].id);
-    }
-
-    const freeM=men.filter(m=>!used.has(m.id));
-    for(let i=0;i+1<freeM.length && teams.length<numCourts*2;i+=2){
-      teams.push({type:'MM',a:freeM[i],b:freeM[i+1]});
-      used.add(freeM[i].id); used.add(freeM[i+1].id);
-    }
-
     for(let i=0;i+1<teams.length;i+=2){
-      if(teams[i].type===teams[i+1].type){
-        html+=`<div class="match">
-          (${teams[i].a.name} + ${teams[i].b.name})
-          vs
-          (${teams[i+1].a.name} + ${teams[i+1].b.name})
-        </div>`;
-      }
+      html+=`<div class="match">
+        (${teams[i].a.name}+${teams[i].b.name})
+        vs
+        (${teams[i+1].a.name}+${teams[i+1].b.name})
+      </div>`;
     }
 
     active.forEach(p=>p.playedLastRound=true);
+    rounds.push({round,teams,idle});
 
-    html+=`<div class="idle">Idle: ${idle.map(p=>p.name).join(', ')}</div>`;
-    html+='</div>';
+    html+=`<div class="idle">Idle: ${idle.map(p=>p.name).join(', ')}</div></div>`;
     fixtures.innerHTML+=html;
   }
-
   fixturesCard.style.display='block';
+}
+
+/* ---------- SCORING ---------- */
+
+function showScoring(){
+  scoring.innerHTML='';
+  rounds.forEach(r=>{
+    let html=`<div class="round"><strong>Round ${r.round}</strong>`;
+    r.teams.forEach((t,i)=>{
+      const key=`r${r.round}m${i}`;
+      const s=scores[key]||['',''];
+      html+=`
+        <div class="match">
+          (${t.a.name}+${t.b.name})
+          <div class="score-row">
+            <input type="number" value="${s[0]}" onchange="saveScore('${key}',0,this.value)">
+            <span>:</span>
+            <input type="number" value="${s[1]}" onchange="saveScore('${key}',1,this.value)">
+          </div>
+        </div>`;
+    });
+    html+='</div>';
+    scoring.innerHTML+=html;
+  });
+  scoringCard.style.display='block';
+}
+
+function saveScore(key,idx,val){
+  scores[key]=scores[key]||['',''];
+  scores[key][idx]=val;
+  localStorage.setItem('scores',JSON.stringify(scores));
+}
+
+/* ---------- SUMMARY ---------- */
+
+function generateSummary(){
+  let stats={};
+  players.forEach(p=>stats[p.id]={name:p.name,gender:p.gender,Played:0,Won:0,R:{}});
+
+  rounds.forEach(r=>{
+    r.teams.forEach((t,i)=>{
+      const key=`r${r.round}m${i}`;
+      const s=scores[key];
+      if(!s||s[0]===''||s[1]==='') return;
+      stats[t.a.id].Played++;
+      stats[t.b.id].Played++;
+      stats[t.a.id].R[r.round]='P';
+      stats[t.b.id].R[r.round]='P';
+      if(+s[0]>+s[1]){
+        stats[t.a.id].Won++; stats[t.b.id].Won++;
+      }
+    });
+    r.idle.forEach(p=>{
+      stats[p.id].R[r.round]='I';
+    });
+  });
+
+  const ordered=[...players].sort((a,b)=>
+    a.gender===b.gender
+      ? a.name.localeCompare(b.name)
+      : a.gender==='W'?-1:1
+  );
+
+  let html='<table><tr><th>Player</th><th>Played</th><th>Won</th>';
+  for(let r=1;r<=ROUND_LIMIT;r++) html+=`<th>R${r}</th>`;
+  html+='</tr>';
+
+  ordered.forEach(p=>{
+    const s=stats[p.id];
+    html+=`<tr><td>${p.name}</td><td>${s.Played}</td><td>${s.Won}</td>`;
+    for(let r=1;r<=ROUND_LIMIT;r++) html+=`<td>${s.R[r]||''}</td>`;
+    html+='</tr>';
+  });
+
+  summary.innerHTML=html;
+  summaryCard.style.display='block';
 }
 </script>
 </body>

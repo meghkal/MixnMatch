@@ -56,7 +56,6 @@ textarea{min-height:120px;resize:vertical;}
   cursor:pointer;
 }
 .btn.primary{background:var(--accent);color:#102238;}
-.btn.ghost{background:transparent;color:var(--card-text);border:1px solid rgba(255,255,255,0.12);}
 .action-row{display:flex;gap:10px;justify-content:flex-end;margin-top:12px;}
 .round{
   background:rgba(255,255,255,0.03);
@@ -66,7 +65,6 @@ textarea{min-height:120px;resize:vertical;}
 }
 .match{padding:6px 0;}
 .idle{font-size:12.5px;color:var(--muted);margin-top:6px;}
-.serial-list{font-size:13px;line-height:1.6;margin-top:6px;color:#cfe3ff;}
 </style>
 </head>
 
@@ -81,30 +79,17 @@ textarea{min-height:120px;resize:vertical;}
   <input id="courts" type="number" min="1" value="2">
   <div class="action-row">
     <button class="btn primary" onclick="showEntry()">Next: Enter Players</button>
-    <button class="btn ghost" onclick="location.reload()">Reset</button>
   </div>
 </div>
 
 <div class="card" id="entryCard" style="display:none;">
   <div class="title">Enter Players</div>
 
-  <label>
-    <input type="checkbox" id="womenChk" onchange="toggleGender('W')">
-    Women
-  </label>
-  <div id="womenBox" style="display:none;">
-    <textarea id="womenNames" placeholder="Enter one name per line"></textarea>
-    <div id="womenList" class="serial-list"></div>
-  </div>
+  <label>Women (one per line)</label>
+  <textarea id="women"></textarea>
 
-  <label style="margin-top:10px;">
-    <input type="checkbox" id="menChk" onchange="toggleGender('M')">
-    Men
-  </label>
-  <div id="menBox" style="display:none;">
-    <textarea id="menNames" placeholder="Enter one name per line"></textarea>
-    <div id="menList" class="serial-list"></div>
-  </div>
+  <label style="margin-top:8px;">Men (one per line)</label>
+  <textarea id="men"></textarea>
 
   <div class="action-row">
     <button class="btn primary" onclick="savePlayers()">Generate Fixtures</button>
@@ -119,136 +104,81 @@ textarea{min-height:120px;resize:vertical;}
 </div>
 
 <script>
-let players=[], pairHistory={}, idleCount={};
-const ROUND_LIMIT = 8;
+let players=[], pairHistory={}, idleCount={}
+const ROUND_LIMIT=8
 
-function showEntry(){
-  entryCard.style.display='block';
-}
-
-function toggleGender(g){
-  if(g==='W'){
-    womenBox.style.display = womenChk.checked ? 'block' : 'none';
-  }
-  if(g==='M'){
-    menBox.style.display = menChk.checked ? 'block' : 'none';
-  }
-}
-
-womenNames?.addEventListener('input', ()=>renderList('W'));
-menNames?.addEventListener('input', ()=>renderList('M'));
-
-function renderList(g){
-  const src = g==='W' ? womenNames.value : menNames.value;
-  const out = g==='W' ? womenList : menList;
-  const names = src.split('\n').map(s=>s.trim()).filter(Boolean);
-  out.innerHTML = names.map((n,i)=>`${i+1}. ${n}`).join('<br>');
-}
+function showEntry(){ entryCard.style.display='block' }
 
 function savePlayers(){
-  players=[]; pairHistory={}; idleCount={};
-
-  let id=1;
-  const women = womenChk.checked
-    ? womenNames.value.split('\n').map(s=>s.trim()).filter(Boolean)
-    : [];
-  const men = menChk.checked
-    ? menNames.value.split('\n').map(s=>s.trim()).filter(Boolean)
-    : [];
-
-  if(!women.length && !men.length){
-    alert('Enter at least one player');
-    return;
-  }
-
-  women.forEach(n=>{
-    players.push({id, name:n, gender:'W', playedLastRound:false});
-    idleCount[id++]=0;
-  });
-  men.forEach(n=>{
-    players.push({id, name:n, gender:'M', playedLastRound:false});
-    idleCount[id++]=0;
-  });
-
-  generateRounds();
+  players=[]; pairHistory={}; idleCount={}
+  let id=1
+  women.value.split('\n').map(s=>s.trim()).filter(Boolean)
+    .forEach(n=>{ players.push({id,name:n,gender:'W',playedLastRound:false}); idleCount[id++]=0 })
+  men.value.split('\n').map(s=>s.trim()).filter(Boolean)
+    .forEach(n=>{ players.push({id,name:n,gender:'M',playedLastRound:false}); idleCount[id++]=0 })
+  generateRounds()
 }
 
-function pairKey(a,b){
-  return [a.id,b.id].sort().join('-');
-}
+function pairKey(a,b){ return [a.id,b.id].sort().join('-') }
 
 function generateRounds(){
-  fixtures.innerHTML='';
-  const numCourts=+courts.value;
-  const activeCount=numCourts*4;
+  fixtures.innerHTML=''
+  const numCourts=+courts.value
+  const activeCount=numCourts*4
 
-  for(let round=1; round<=ROUND_LIMIT; round++){
-    players.forEach(p=>p.playedLastRound=false);
+  for(let round=1;round<=ROUND_LIMIT;round++){
+    players.forEach(p=>p.playedLastRound=false)
+    let used=new Set(), teams=[]
+    let html=`<div class="round"><strong>Round ${round}</strong>`
 
-    let used=new Set(), teams=[];
-    let html=`<div class="round"><strong>Round ${round}</strong>`;
+    const sorted=[...players].sort((a,b)=>
+      (idleCount[a.id]-idleCount[b.id])||(a.id-b.id)
+    )
 
-    const sorted=[...players].sort((a,b)=>{
-      const restBias =
-        (a.gender==='W' && a.playedLastRound ? -1 : 0) -
-        (b.gender==='W' && b.playedLastRound ? -1 : 0);
-      if(restBias) return restBias;
-      return (idleCount[a.id]-idleCount[b.id]) || (a.id-b.id);
-    });
+    const idle=sorted.slice(0,players.length-activeCount)
+    idle.forEach(p=>idleCount[p.id]++)
+    const active=sorted.slice(players.length-activeCount)
 
-    const idle=sorted.slice(0, players.length-activeCount);
-    idle.forEach(p=>idleCount[p.id]++);
-    const active=sorted.slice(players.length-activeCount);
+    const menA=active.filter(p=>p.gender==='M')
+    const womenA=active.filter(p=>p.gender==='W')
 
-    const men=active.filter(p=>p.gender==='M');
-    const women=active.filter(p=>p.gender==='W');
+    const balanced = Math.abs(menA.length-womenA.length)<=1
+    const maxMW = balanced ? (numCourts-1) : numCourts
 
-    let mwPairs=[];
-    men.forEach(m=>{
-      women.forEach(w=>{
-        const k=pairKey(m,w);
-        mwPairs.push({m,w,used:pairHistory[k]||0});
-      });
-    });
-    mwPairs.sort((a,b)=>a.used-b.used);
+    let mwPairs=[]
+    menA.forEach(m=>womenA.forEach(w=>{
+      mwPairs.push({m,w,used:pairHistory[pairKey(m,w)]||0})
+    }))
+    mwPairs.sort((a,b)=>a.used-b.used)
 
     for(const p of mwPairs){
-      if(used.has(p.m.id)||used.has(p.w.id)) continue;
-      teams.push({type:'MW',a:p.m,b:p.w});
-      used.add(p.m.id); used.add(p.w.id);
-      pairHistory[pairKey(p.m,p.w)]=(pairHistory[pairKey(p.m,p.w)]||0)+1;
-      if(teams.length===numCourts*2) break;
+      if(teams.length>=maxMW*2) break
+      if(used.has(p.m.id)||used.has(p.w.id)) continue
+      teams.push({type:'MW',a:p.m,b:p.w})
+      used.add(p.m.id); used.add(p.w.id)
+      pairHistory[pairKey(p.m,p.w)]=(pairHistory[pairKey(p.m,p.w)]||0)+1
     }
 
-    const freeW=women.filter(w=>!used.has(w.id));
-    for(let i=0;i+1<freeW.length && teams.length<numCourts*2;i+=2){
-      teams.push({type:'WW',a:freeW[i],b:freeW[i+1]});
-      used.add(freeW[i].id); used.add(freeW[i+1].id);
-    }
+    const freeW=womenA.filter(w=>!used.has(w.id))
+    const freeM=menA.filter(m=>!used.has(m.id))
 
-    const freeM=men.filter(m=>!used.has(m.id));
-    for(let i=0;i+1<freeM.length && teams.length<numCourts*2;i+=2){
-      teams.push({type:'MM',a:freeM[i],b:freeM[i+1]});
-      used.add(freeM[i].id); used.add(freeM[i+1].id);
+    if(freeW.length>=2){
+      teams.push({type:'WW',a:freeW[0],b:freeW[1]})
+      used.add(freeW[0].id); used.add(freeW[1].id)
+    } else if(freeM.length>=2){
+      teams.push({type:'MM',a:freeM[0],b:freeM[1]})
+      used.add(freeM[0].id); used.add(freeM[1].id)
     }
 
     for(let i=0;i+1<teams.length;i+=2){
-      if(teams[i].type===teams[i+1].type){
-        html+=`<div class="match">
-          (${teams[i].a.name} + ${teams[i].b.name})
-          vs
-          (${teams[i+1].a.name} + ${teams[i+1].b.name})
-        </div>`;
-      }
+      html+=`<div class="match">(${teams[i].a.name} + ${teams[i].b.name})
+      vs (${teams[i+1].a.name} + ${teams[i+1].b.name})</div>`
     }
 
-    active.forEach(p=>p.playedLastRound=true);
-    html+=`<div class="idle">Idle: ${idle.map(p=>p.name).join(', ')}</div>`;
-    html+='</div>';
-    fixtures.innerHTML+=html;
+    html+=`<div class="idle">Idle: ${idle.map(p=>p.name).join(', ')}</div></div>`
+    fixtures.innerHTML+=html
   }
-
-  fixturesCard.style.display='block';
+  fixturesCard.style.display='block'
 }
 </script>
 </body>

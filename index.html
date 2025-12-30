@@ -67,27 +67,11 @@ input,select{
 .match{padding:6px 0;font-size:14.5px;}
 .idle{font-size:12.5px;color:var(--muted);margin-top:6px;font-style:italic;}
 
-.score-row{
-  display:flex;
-  align-items:center;
-  gap:8px;
-  margin-top:4px;
-}
-.score-row input{
-  width:64px;
-  text-align:center;
-}
+.score-row{display:flex;align-items:center;gap:8px;margin-top:4px;}
+.score-row input{width:64px;text-align:center;}
 
-table{
-  width:100%;
-  border-collapse:collapse;
-  font-size:13px;
-}
-th,td{
-  border-bottom:1px solid rgba(255,255,255,0.08);
-  padding:6px;
-  text-align:center;
-}
+table{width:100%;border-collapse:collapse;font-size:13px;}
+th,td{border-bottom:1px solid rgba(255,255,255,0.08);padding:6px;text-align:center;}
 th{color:var(--muted);font-weight:600;}
 td:first-child,th:first-child{text-align:left;}
 
@@ -104,7 +88,6 @@ td:first-child,th:first-child{text-align:left;}
 <div class="banner">Mix n Match — Standalone</div>
 <div class="wrap">
 
-<!-- Setup -->
 <div class="card">
   <div class="title">Setup</div>
   <label>Courts</label>
@@ -117,7 +100,6 @@ td:first-child,th:first-child{text-align:left;}
   </div>
 </div>
 
-<!-- Entry -->
 <div class="card" id="entryCard" style="display:none;">
   <div class="title">Enter Players</div>
   <div id="entry"></div>
@@ -126,17 +108,14 @@ td:first-child,th:first-child{text-align:left;}
   </div>
 </div>
 
-<!-- Fixtures summary -->
 <div class="card" id="fixturesCard" style="display:none;">
   <div class="title">Fixtures</div>
   <div id="fixtures"></div>
   <div class="action-row">
-    <!-- CHANGED: ghost → primary -->
     <button class="btn primary" onclick="showScoring()">Enter Scores</button>
   </div>
 </div>
 
-<!-- Scoring -->
 <div class="card" id="scoringCard" style="display:none;">
   <div class="title">Enter Scores</div>
   <div id="scoring"></div>
@@ -145,7 +124,6 @@ td:first-child,th:first-child{text-align:left;}
   </div>
 </div>
 
-<!-- Summary -->
 <div class="card" id="summaryCard" style="display:none;">
   <div class="title">Summary</div>
   <div id="summary"></div>
@@ -158,9 +136,9 @@ td:first-child,th:first-child{text-align:left;}
 </div>
 
 <script>
-const ROUND_LIMIT=8;
-let players=[], idleCount={}, rounds=[], scores=
-  JSON.parse(localStorage.getItem('scores')||'{}');
+const ROUND_LIMIT = 8;
+let players=[], rounds=[], scores=JSON.parse(localStorage.getItem('scores')||'{}');
+let idleCount={};
 
 function startEntry(){
   let html='';
@@ -180,13 +158,13 @@ function startEntry(){
 }
 
 function savePlayers(){
-  players=[]; idleCount={}; rounds=[];
+  players=[]; rounds=[]; idleCount={};
   for(let i=1;i<=+count.value;i++){
     const g=document.getElementById(`g${i}`).value;
     if(!g){alert('All genders required');return;}
     const p={id:i,name:n(i).value||`Player ${i}`,gender:g};
-    players.push(p); idleCount[i]=0;
-    localStorage.setItem('p'+i,JSON.stringify(p));
+    players.push(p);
+    idleCount[p.id]=0;
   }
   buildRounds();
 }
@@ -195,29 +173,36 @@ function n(i){return document.getElementById(`n${i}`);}
 
 function buildRounds(){
   fixtures.innerHTML='';
-  const numCourts=+courts.value, activeCount=numCourts*4;
+  const numCourts=+courts.value;
+  const needPerGender=numCourts*2;
 
   for(let r=1;r<=ROUND_LIMIT;r++){
-    const sorted=[...players].sort((a,b)=>(idleCount[a.id]-idleCount[b.id])||a.id-b.id);
-    const idle=sorted.slice(0,players.length-activeCount);
+    const women=players.filter(p=>p.gender==='W')
+      .sort((a,b)=>(idleCount[a.id]-idleCount[b.id])||a.id-b.id);
+    const men=players.filter(p=>p.gender==='M')
+      .sort((a,b)=>(idleCount[a.id]-idleCount[b.id])||a.id-b.id);
+
+    const activeWomen=women.slice(0,needPerGender);
+    const activeMen=men.slice(0,needPerGender);
+
+    const idle=[
+      ...women.slice(needPerGender),
+      ...men.slice(needPerGender)
+    ];
     idle.forEach(p=>idleCount[p.id]++);
-    const active=sorted.slice(players.length-activeCount);
 
-    const men=active.filter(p=>p.gender==='M');
-    const women=active.filter(p=>p.gender==='W');
     let teams=[];
-
-    for(let i=0;i<Math.min(men.length,women.length)&&teams.length<numCourts*2;i++)
-      teams.push([women[i],men[i]]);
+    for(let i=0;i<needPerGender;i++)
+      teams.push([activeWomen[i],activeMen[i]]);
 
     rounds.push({round:r,teams,idle});
 
     let html=`<div class="round"><strong>Round ${r}</strong>`;
     for(let i=0;i+1<teams.length;i+=2){
       html+=`<div class="match">
-        (${teams[i][0].name}+${teams[i][1].name})
+        (${teams[i][0].name} + ${teams[i][1].name})
         vs
-        (${teams[i+1][0].name}+${teams[i+1][1].name})
+        (${teams[i+1][0].name} + ${teams[i+1][1].name})
       </div>`;
     }
     html+=`<div class="idle">Idle: ${idle.map(p=>p.name).join(', ')}</div></div>`;
